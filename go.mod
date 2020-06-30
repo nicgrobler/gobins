@@ -1,5 +1,3 @@
-module github.com/nicgrobler/gobins/cmd/cluster_reader
-
 go 1.13
 
 require (
