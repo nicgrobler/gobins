@@ -1,4 +1,4 @@
-module github.com/nicgrobler/gobin
+module github.com/nicgrobler/gobins
 
 go 1.13
 
