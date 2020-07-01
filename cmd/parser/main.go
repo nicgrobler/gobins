@@ -24,14 +24,14 @@ import (
 */
 
 const (
-	quotaFilename               string = "10-quotas.yaml"
-	projectFilename             string = "1-project.yaml"
-	defaultRolebindingFilename  string = "10-default-rolebinding.yaml"
-	jenkinsRolebindinngFilename string = "10-jenkins-rolebinding.yaml"
-	editRolebindingFilename     string = "10-edit-group-rolebinding.yaml"
-	viewRolebindingFilename     string = "10-view-group-rolebinding.yaml"
-	networkPolicyFilename       string = "10-networkpolicy.yaml"
-	egressNetworkPolicyFilename string = "10-egress-networkpolicy.yaml"
+	quotaFilename               string = "10-quotas.json"
+	projectFilename             string = "1-project.json"
+	defaultRolebindingFilename  string = "10-default-rolebinding.json"
+	jenkinsRolebindinngFilename string = "10-jenkins-rolebinding.json"
+	editRolebindingFilename     string = "10-edit-group-rolebinding.json"
+	viewRolebindingFilename     string = "10-view-group-rolebinding.json"
+	networkPolicyFilename       string = "10-networkpolicy.json"
+	egressNetworkPolicyFilename string = "10-egress-networkpolicy.json"
 )
 
 /*
