@@ -15,6 +15,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+type resultList struct {
+	RoleBindings []string                 `json:"rolebindings"`
+	Quotas       []coreTypes.ResourceList `json:"quotas"`
+}
+
 type namespaceList struct {
 	NameSpaces []string `json:"namespaces"`
 }
@@ -98,6 +103,8 @@ func main() {
 
 	flag.Parse()
 
+	results := resultList{}
+
 	if *kubeconfig == "" || *clusterContext == "" || *nameSpace == "" {
 		log.Fatalf("kubeconfig: %s, context: %s, and namespace: %s\n", *kubeconfig, *clusterContext, *nameSpace)
 	}
@@ -134,20 +141,19 @@ func main() {
 		log.Fatalf("generate list of role bindings failed: %s", err.Error())
 	}
 
-	data, err := json.Marshal(bindings)
-	if err != nil {
-		log.Fatalf("json encoding of role bindings failed: %s", err.Error())
-	}
-	fmt.Println(string(data))
+	results.RoleBindings = bindings.RoleBindings
 
 	quotas, err := getQuotas(clientset, *nameSpace)
 	if err != nil {
 		log.Fatalf("generate list of role bindings failed: %s", err.Error())
 	}
 
-	data, err = json.Marshal(quotas)
+	results.Quotas = quotas.Quotas
+
+	resultString, err := json.Marshal(results)
 	if err != nil {
-		log.Fatalf("json encoding of quotas failed: %s", err.Error())
+		log.Fatalf("failed to encode json due to error: %s", err.Error())
 	}
-	fmt.Println(string(data))
+
+	fmt.Println(string(resultString))
 }
