@@ -456,7 +456,7 @@ func TestCreateNewRoleBindingObject(t *testing.T) {
 
 	expectedBytes[editRolebindingFilename] = []byte(`{"kind":"RoleBinding","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"boogie-test-edit-binding","namespace":"boogie-test"},"subjects":[{"kind":"Group","apiGroup":"rbac.authorization.k8s.io","name":"RES-DEV-OPSH-DEVELOPER-BOOGIE_TEST"}],"roleRef":{"kind":"ClusterRole","apiGroup":"rbac.authorization.k8s.io","name":"edit"}}`)
 	expectedBytes[viewRolebindingFilename] = []byte(`{"kind":"RoleBinding","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"boogie-test-view-binding","namespace":"boogie-test"},"subjects":[{"kind":"Group","apiGroup":"rbac.authorization.k8s.io","name":"RES-DEV-OPSH-VIEWER-BOOGIE_TEST"}],"roleRef":{"kind":"ClusterRole","apiGroup":"rbac.authorization.k8s.io","name":"view"}}`)
-	expectedBytes[jenkinsRolebindinngFilename] = []byte(`{"kind":"RoleBinding","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"boogie-test-admin-relman-binding","namespace":"boogie-test"},"subjects":[{"kind":"ServiceAccount","name":"relman","namespace":"relman"}],"roleRef":{"kind":"ClusterRole","apiGroup":"rbac.authorization.k8s.io","name":"admin"}}`)
+	expectedBytes[jenkinsRolebindinngFilename] = []byte(`{"kind":"RoleBinding","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"boogie-test-admin-relman-binding","namespace":"boogie-test"},"subjects":[{"kind":"Group","apiGroup":"rbac.authorization.k8s.io","name":"RES-DEV-OPSH-DEPLOY-RELMAN"}],"roleRef":{"kind":"ClusterRole","apiGroup":"rbac.authorization.k8s.io","name":"admin"}}`)
 
 	i := expectedInput{ProjectName: "boogie-test", Environment: "dev"}
 

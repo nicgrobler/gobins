@@ -233,6 +233,7 @@ func createRoleBindingObjects(data *expectedInput) ([]string, []roleBinding) {
 		bytes = append(bytes, y)
 	}
 	// now do 3
+	deployer := generateADRelmanGroupName(data)
 	roleName := "admin-relman"
 	roleBindingName := strings.ToLower(data.ProjectName + "-" + roleName + "-" + "binding")
 	// create our object
@@ -244,9 +245,9 @@ func createRoleBindingObjects(data *expectedInput) ([]string, []roleBinding) {
 	y.Metadata.NameSpace = data.ProjectName
 	y.Subjects = subjects{
 		subject{
-			Kind:      "ServiceAccount",
-			Name:      "relman",
-			Namespace: "relman",
+			Kind:     "Group",
+			APIGroup: "rbac.authorization.k8s.io",
+			Name:     deployer["DEPLOY"],
 		},
 	}
 	y.RoleRef.APIGroup = "rbac.authorization.k8s.io"
@@ -390,6 +391,21 @@ func generateADGroupNames(data *expectedInput) map[string]string {
 	s := make(map[string]string)
 	s["EDIT"] = strings.ToUpper("RES" + "-" + data.Environment + "-" + "OPSH" + "-" + "DEVELOPER" + "-" + strings.ReplaceAll(data.ProjectName, "-", "_"))
 	s["VIEW"] = strings.ToUpper("RES" + "-" + data.Environment + "-" + "OPSH" + "-" + "VIEWER" + "-" + strings.ReplaceAll(data.ProjectName, "-", "_"))
+	return s
+}
+
+func generateADRelmanGroupName(data *expectedInput) map[string]string {
+	/*
+		AD groups names will be gererated as:
+
+		"RES" + "-" + environment + "-" + "OPSH" + "-" + MANAGE + "-" + RELMAN
+		"RES" + "-" + environment + "-" + "OPSH" + "-" + DEPLOY + "-" + RELMAN
+
+		returns a map of "PURPOSE" : "AD GROUP NAME"
+	*/
+	s := make(map[string]string)
+	s["DEPLOY"] = strings.ToUpper("RES-" + data.Environment + "-OPSH-DEPLOY-RELMAN")
+	s["MANAGE"] = strings.ToUpper("RES-" + data.Environment + "-OPSH-MANAGE-RELMAN")
 	return s
 }
 
