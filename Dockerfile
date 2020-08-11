@@ -3,6 +3,7 @@ RUN mkdir -p /go/src/gobins
 COPY . /go/src/gobins
 RUN cd /go/src/gobins \
   && go mod verify \
+  && go test -v ./cmd/parser/... \ 
   && env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /go/bin/ -a ./cmd/... 
 
 FROM scratch
