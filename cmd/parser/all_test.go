@@ -411,7 +411,7 @@ func TestCreateNewProjectObject(t *testing.T) {
 
 func TestCreateNewNetworkPolicyObject(t *testing.T) {
 
-	expectedBytes := []byte(`{"kind":"NetworkPolicy","apiVersion":"networking.k8s.io/v1","metadata":{"name":"deny-by-default","namespace":"boogie-test"},"spec":{"podSelector":{},"policyTypes":["Ingress","Egress"]}}`)
+	expectedBytes := []byte(`{"kind":"NetworkPolicy","apiVersion":"networking.k8s.io/v1","metadata":{"name":"allow-same-namespace","namespace":"boogie-test"},"spec":{"podSelector":{},"ingress":[{"from":[{"podSelector":{}}]}],"policyTypes":["Ingress"]}}`)
 
 	i := expectedInput{ProjectName: "boogie-test"}
 	fileName, baseObject := createNetworkPolicyObject(&i)

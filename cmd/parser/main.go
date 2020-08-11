@@ -60,11 +60,24 @@ type specQuota struct {
 }
 
 type specNetwork struct {
-	PodSelector struct {
-		Todo string `json:"not-implemented-yet,omitempty"`
-	} `json:"podSelector,omitempty"`
-	PolicyTypes []string `json:"policyTypes,omitempty"`
+	PodSelector podSelector    `json:"podSelector"`
+	IngresRules []ingressRules `json:"ingress"`
+	PolicyTypes []string       `json:"policyTypes,omitempty"`
 }
+
+type podSelector struct {
+	string
+}
+
+type rule struct {
+	Selectors podSelector `json:"podSelector"`
+}
+
+type ingressRule struct {
+	From []rule `json:"from"`
+}
+
+type ingressRules ingressRule
 
 type specEgressNetwork struct {
 	Egress []egressRules `json:"egress"`
@@ -158,11 +171,12 @@ func createNetworkPolicyObject(data *expectedInput) (string, network) {
 		Kind:       "NetworkPolicy",
 		APIVersion: "networking.k8s.io/v1",
 	}
-	y.Metadata.Name = "deny-by-default"
+	y.Metadata.Name = "allow-same-namespace"
 	y.Metadata.NameSpace = data.ProjectName
+	y.Spec = specNetwork{}
+	y.Spec.IngresRules = []ingressRules{ingressRules{[]rule{rule{podSelector{}}}}}
 	y.Spec.PolicyTypes = []string{
 		"Ingress",
-		"Egress",
 	}
 
 	name := networkPolicyFilename
