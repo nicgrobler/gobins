@@ -217,7 +217,7 @@ func createRoleBindingObjects(data *expectedInput) ([]string, []roleBinding) {
 	// first generate data for 1 & 2 above
 	adRolesAndGroupNames := generateADGroupNames(data)
 	for roleName, adGroupName := range adRolesAndGroupNames {
-		roleBindingName := strings.ToLower(data.ProjectName + "-" + roleName + "-" + "binding")
+		roleBindingName := strings.ToLower("adgroup-" + roleName + "-" + "binding")
 		// create our object
 		y := roleBinding{
 			Kind:       "RoleBinding",
@@ -247,33 +247,33 @@ func createRoleBindingObjects(data *expectedInput) ([]string, []roleBinding) {
 		bytes = append(bytes, y)
 	}
 	// now do 3
-	deployer := generateADRelmanGroupName(data)
-	roleName := "admin-relman"
-	roleBindingName := strings.ToLower(data.ProjectName + "-" + roleName + "-" + "binding")
-	// create our object
-	y := roleBinding{
-		Kind:       "RoleBinding",
-		APIVersion: "rbac.authorization.k8s.io/v1",
+	adRolesAndGroupNames = generateADRelmanGroupNames(data)
+	for roleName, adGroupName := range adRolesAndGroupNames {
+		roleBindingName := strings.ToLower("relman-" + roleName + "-" + "binding")
+		// create our object
+		y := roleBinding{
+			Kind:       "RoleBinding",
+			APIVersion: "rbac.authorization.k8s.io/v1",
+		}
+		y.Metadata.Name = roleBindingName
+		y.Metadata.NameSpace = data.ProjectName
+		y.Subjects = subjects{
+			subject{
+				Kind:     "Group",
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     adGroupName,
+			},
+		}
+		y.RoleRef.APIGroup = "rbac.authorization.k8s.io"
+		y.RoleRef.Kind = "ClusterRole"
+		y.RoleRef.Name = "admin"
+
+		name := jenkinsRolebindinngFilename
+
+		// add to results
+		names = append(names, name)
+		bytes = append(bytes, y)
 	}
-	y.Metadata.Name = roleBindingName
-	y.Metadata.NameSpace = data.ProjectName
-	y.Subjects = subjects{
-		subject{
-			Kind:     "Group",
-			APIGroup: "rbac.authorization.k8s.io",
-			Name:     deployer["DEPLOY"],
-		},
-	}
-	y.RoleRef.APIGroup = "rbac.authorization.k8s.io"
-	y.RoleRef.Kind = "ClusterRole"
-	y.RoleRef.Name = "admin"
-
-	name := jenkinsRolebindinngFilename
-
-	// add to results
-	names = append(names, name)
-	bytes = append(bytes, y)
-
 	return names, bytes
 }
 
@@ -408,7 +408,7 @@ func generateADGroupNames(data *expectedInput) map[string]string {
 	return s
 }
 
-func generateADRelmanGroupName(data *expectedInput) map[string]string {
+func generateADRelmanGroupNames(data *expectedInput) map[string]string {
 	/*
 		AD groups names will be gererated as:
 
