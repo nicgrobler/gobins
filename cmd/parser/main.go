@@ -2,426 +2,160 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"text/template"
 )
 
-/*
-	This parser takes a basic input (what will eventually come from Helpline request / elsewhere) in json, and uses this, along with some basic
-    logic (based on standards) to produce two json files:
-    1. New project json
-	2. roleBinding json for EDIT Active Directory group to this new project*
-	3. roleBinding json for VIEW Active Directory group to this new project*
-	4. roleBinding json for relman service account to this new project
-	5. resource limit json
-	6. networkPolicy for the project
-	7. egress networkPolicy for the project
-
-    *The AD group names are generated using the logic used to create the groups within active directory.
-*/
-
-const (
-	quotaFilename               string = "10-quotas.json"
-	projectFilename             string = "1-project.json"
-	defaultRolebindingFilename  string = "10-default-rolebinding.json"
-	jenkinsRolebindinngFilename string = "10-jenkins-rolebinding.json"
-	editRolebindingFilename     string = "10-edit-group-rolebinding.json"
-	viewRolebindingFilename     string = "10-view-group-rolebinding.json"
-	networkPolicyFilename       string = "10-networkpolicy.json"
-	egressNetworkPolicyFilename string = "10-egress-networkpolicy.json"
-)
-
-/*
-	Composable minimal types used to create new json files.
-*/
-
-type metaData struct {
-	Name      string `json:"name"`                // binding name
-	NameSpace string `json:"namespace,omitempty"` // projectname
-}
-
-type roleRef struct {
-	Kind     string `json:"kind"`     // Project
-	APIGroup string `json:"apiGroup"` // rbac.authorization.k8s.io
-	Name     string `json:"name"`     // group name
-
-}
-
-type specQuota struct {
-	Hard struct {
-		CPU     interface{} `json:"limits.cpu,omitempty"`
-		Memory  string      `json:"limits.memory,omitempty"`
-		PVC     int         `json:"persistentvolumeclaims,omitempty"`
-		Storage string      `json:"requests.storage,omitempty"`
-	} `json:"hard,omitempty"`
-}
-
-type specNetwork struct {
-	PodSelector podSelector    `json:"podSelector"`
-	IngresRules []ingressRules `json:"ingress"`
-	PolicyTypes []string       `json:"policyTypes,omitempty"`
-}
-
-type podSelector struct {
-	string
-}
-
-type rule struct {
-	Selectors podSelector `json:"podSelector"`
-}
-
-type ingressRule struct {
-	From []rule `json:"from"`
-}
-
-type ingressRules ingressRule
-
-type specEgressNetwork struct {
-	Egress []egressRules `json:"egress"`
-}
-
-type egressRules struct {
-	EgressType string `json:"type"`
-	To         struct {
-		Cidr string `json:"cidrSelector,omitempty"`
-		URL  string `json:"dnsName,omitempty"`
-	} `json:"to"`
-}
-
-type subject struct {
-	Kind      string `json:"kind"`                // Project
-	APIGroup  string `json:"apiGroup,omitempty"`  // rbac.authorization.k8s.io
-	Name      string `json:"name"`                // group name
-	Namespace string `json:"namespace,omitempty"` // name of project
-
-}
-
-type subjects []subject
-
-type baseObject struct {
-	Kind       string   `json:"kind"`       // Project
-	APIVersion string   `json:"apiVersion"` // project.openshift.io/v1
-	Metadata   metaData `json:"metadata"`
-}
-
-type roleBinding struct {
-	Kind       string   `json:"kind"`       // RoleBinding
-	APIVersion string   `json:"apiVersion"` // rbac.authorization.k8s.io/v1
-	Metadata   metaData `json:"metadata"`
-	Subjects   subjects `json:"subjects"`
-	RoleRef    roleRef  `json:"roleRef"`
-}
-
-type quota struct {
-	Kind       string    `json:"kind"`       // RoleBinding
-	APIVersion string    `json:"apiVersion"` // rbac.authorization.k8s.io/v1
-	Metadata   metaData  `json:"metadata"`
-	Spec       specQuota `json:"spec"`
-}
-
-type network struct {
-	Kind       string      `json:"kind"`       // NetworkPolicy
-	APIVersion string      `json:"apiVersion"` // networking.k8s.io/v1
-	Metadata   metaData    `json:"metadata"`
-	Spec       specNetwork `json:"spec"`
-}
-
-type egressNetwork struct {
-	Kind       string            `json:"kind"`       // EgressNetworkPolicy
-	APIVersion string            `json:"apiVersion"` // network.openshift.io/v1
-	Metadata   metaData          `json:"metadata"`
-	Spec       specEgressNetwork `json:"spec"`
-}
-
-/*
-	Results object: a simple nested json, where each key is the name of the destinationn file,
-	and the data, is the associated value
-*/
-
-type resultEntry struct {
-	Name    string      `json:"filename"`
-	Content interface{} `json:"content"`
-}
-
-type resultsObject []resultEntry
-
-/*
-	Main functions for creating our serialized json objects
-*/
-
-func createProjectObject(data *expectedInput) (string, baseObject) {
-	// create our object
-	y := baseObject{
-		Kind:       "Project",
-		APIVersion: "project.openshift.io/v1",
+func getFuncMap() template.FuncMap {
+	return template.FuncMap{
+		"replace":    replace,
+		"upper":      upper,
+		"lower":      lower,
+		"getCPU":     getCPU,
+		"getMEM":     getMEM,
+		"getPVC":     getPVC,
+		"getStorage": getStorage,
 	}
-	y.Metadata.Name = data.ProjectName
-
-	name := projectFilename
-	return name, y
 }
 
-func createNetworkPolicyObject(data *expectedInput) (string, network) {
-
-	// create our NetworkPolicy object
-	y := network{
-		Kind:       "NetworkPolicy",
-		APIVersion: "networking.k8s.io/v1",
-	}
-	y.Metadata.Name = "allow-same-namespace"
-	y.Metadata.NameSpace = data.ProjectName
-	y.Spec = specNetwork{}
-	y.Spec.IngresRules = []ingressRules{ingressRules{[]rule{rule{podSelector{}}}}}
-	y.Spec.PolicyTypes = []string{
-		"Ingress",
-	}
-
-	name := networkPolicyFilename
-
-	return name, y
-
-}
-
-func createEgressNetworkPolicyObject(data *expectedInput) (string, egressNetwork) {
-
-	// create our EgressNetworkPolicy object
-	e := egressNetwork{
-		Kind:       "EgressNetworkPolicy",
-		APIVersion: "network.openshift.io/v1",
-	}
-	e.Metadata.Name = "default-egress"
-	e.Metadata.NameSpace = data.ProjectName
-	e.Spec.Egress = []egressRules{egressRules{EgressType: "Deny"}}
-	e.Spec.Egress[0].To.Cidr = "0.0.0.0/0"
-
-	name := egressNetworkPolicyFilename
-
-	return name, e
-
-}
-
-func createRoleBindingObjects(data *expectedInput) ([]string, []roleBinding) {
-	/*
-		This function will produce the data for 3 files:
-
-		1. The generated AD groupname that has the EDIT role
-		2. The generated AD groupname that has the VIEW role
-		3. The static service account name (relman) that has admin role for deployments
-	*/
-	var names []string
-	var bytes []roleBinding
-
-	// first generate data for 1 & 2 above
-	adRolesAndGroupNames := generateADGroupNames(data)
-	for roleName, adGroupName := range adRolesAndGroupNames {
-		roleBindingName := strings.ToLower("adgroup-" + roleName + "-" + "binding")
-		// create our object
-		y := roleBinding{
-			Kind:       "RoleBinding",
-			APIVersion: "rbac.authorization.k8s.io/v1",
-		}
-		y.Metadata.Name = roleBindingName
-		y.Metadata.NameSpace = data.ProjectName
-		y.Subjects = subjects{
-			subject{
-				Kind:     "Group",
-				APIGroup: "rbac.authorization.k8s.io",
-				Name:     adGroupName,
-			},
-		}
-		y.RoleRef.APIGroup = "rbac.authorization.k8s.io"
-		y.RoleRef.Kind = "ClusterRole"
-		y.RoleRef.Name = strings.ToLower(roleName)
-
-		name := ""
-		if y.RoleRef.Name == "edit" {
-			name = editRolebindingFilename
-		} else {
-			name = viewRolebindingFilename
-		}
-		// add to results
-		names = append(names, name)
-		bytes = append(bytes, y)
-	}
-	// now do 3
-	adRolesAndGroupNames = generateADRelmanGroupNames(data)
-	for roleName, adGroupName := range adRolesAndGroupNames {
-		roleBindingName := strings.ToLower("relman-" + roleName + "-" + "binding")
-		// create our object
-		y := roleBinding{
-			Kind:       "RoleBinding",
-			APIVersion: "rbac.authorization.k8s.io/v1",
-		}
-		y.Metadata.Name = roleBindingName
-		y.Metadata.NameSpace = data.ProjectName
-		y.Subjects = subjects{
-			subject{
-				Kind:     "Group",
-				APIGroup: "rbac.authorization.k8s.io",
-				Name:     adGroupName,
-			},
-		}
-		y.RoleRef.APIGroup = "rbac.authorization.k8s.io"
-		y.RoleRef.Kind = "ClusterRole"
-		y.RoleRef.Name = "admin"
-
-		name := jenkinsRolebindinngFilename
-
-		// add to results
-		names = append(names, name)
-		bytes = append(bytes, y)
-	}
-	return names, bytes
-}
-
-func createLimitsObject(data *expectedInput) (string, quota) {
-	if data.Optionals == nil {
-		// should never happen, but if so, handle it
-		return "", quota{}
-	}
-	// create our object
-	y := quota{
-		Kind:       "ResourceQuota",
-		APIVersion: "v1",
-	}
-	y.Metadata.Name = "default-quotas"
-	y.Metadata.NameSpace = data.ProjectName
-
-	// now get the optionals
+func getCPU(data *expectedInput, defaultValue interface{}) string {
 	if o := data.getOptional("cpu"); o != nil {
 		// CPU can be specified with, and without a suffix - handle both
 		if o.Unit.string != "" {
-			y.Spec.Hard.CPU = concat(o.Count.int, o.Unit.string)
-		} else {
-			y.Spec.Hard.CPU = o.Count.int
+			return quoteString(concat(o.Count.int, o.Unit.string))
 		}
+		return strconv.Itoa(o.Count.int)
 	}
+	// use the supplied default
+	switch t := defaultValue.(type) {
+	case string:
+		return quoteString(t)
+	case int:
+		return strconv.Itoa(t)
+	}
+	return ""
+}
 
+func getMEM(data *expectedInput, defaultValue interface{}) string {
 	if o := data.getOptional("memory"); o != nil {
-		y.Spec.Hard.Memory = concat(o.Count.int, o.Unit.string)
+		return quoteString(concat(o.Count.int, o.Unit.string))
 	}
+	// use the supplied default
+	switch t := defaultValue.(type) {
+	case string:
+		return quoteString(t)
+	case int:
+		return strconv.Itoa(t)
+	}
+	return ""
+}
 
+func getPVC(data *expectedInput, defaultValue interface{}) string {
 	if o := data.getOptional("volumes"); o != nil {
-		y.Spec.Hard.PVC = o.Count.int
+		return strconv.Itoa(o.Count.int)
 	}
+	// use the supplied default
+	switch t := defaultValue.(type) {
+	case string:
+		return quoteString(t)
+	case int:
+		return strconv.Itoa(t)
+	}
+	return ""
+}
 
+func getStorage(data *expectedInput, defaultValue interface{}) string {
 	if o := data.getOptional("storage"); o != nil {
-		y.Spec.Hard.Storage = concat(o.Count.int, o.Unit.string)
+		return quoteString(concat(o.Count.int, o.Unit.string))
 	}
+	// use the supplied default
+	switch t := defaultValue.(type) {
+	case string:
+		return quoteString(t)
+	case int:
+		return strconv.Itoa(t)
+	}
+	return ""
+}
 
-	name := quotaFilename
+func quoteString(s string) string {
+	return "\"" + s + "\""
+}
 
-	return name, y
+func (c *config) createJSONBytes(data *expectedInput, tpl *template.Template) ([]byte, error) {
+
+	unknown := getInterfaceFromTemplate(tpl, data)
+	if c.flatOutput {
+		bytes, err := json.Marshal(unknown)
+		if err != nil {
+			return nil, err
+		}
+		return bytes, nil
+	}
+	bytes, err := json.MarshalIndent(unknown, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return bytes, nil
+
 }
 
 func concat(i int, s string) string {
 	return strconv.Itoa(i) + s
 }
 
-func process(data *expectedInput) *resultsObject {
-	/*
-		Populate our resultsObject here with each file and its contents
-	*/
-
-	results := &resultsObject{}
-	results.addPayload(createProjectObject(data))
-	results.addPayload(createRoleBindingObjects(data))
-	results.addPayload(createLimitsObject(data))
-	results.addPayload(createNetworkPolicyObject(data))
-	results.addPayload(createEgressNetworkPolicyObject(data))
-
+func rangeBetweenBrackets(results []byte) []byte {
+	// given a slice with '[' as the first char, returns the next, all the way to the second from last, the closing ']'
+	if results[0] == byte('[') {
+		return results[1 : len(results)-2]
+	}
 	return results
+}
+
+func (c *config) getTemplates(data *expectedInput) []*template.Template {
+	var templates []*template.Template
+	if c.usefileContentInput {
+		tpl := getTemplateFromString("raw_stream", c.fileContent, getFuncMap())
+		templates = append(templates, tpl)
+		return templates
+	}
+	for _, fileName := range c.fileList {
+		tpl := getTemplateFromFile(fileName, c.templateDir+fileName, getFuncMap())
+		templates = append(templates, tpl)
+	}
+	return templates
+}
+
+func (c *config) process(data *expectedInput) ([]byte, error) {
+
+	var results []byte
+	// as returning a JSON slice, add first and last brackets
+	results = append(results, byte('['))
+
+	// grab templates
+	templates := c.getTemplates(data)
+	for _, t := range templates {
+		tempBytes, err := c.createJSONBytes(data, t)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range rangeBetweenBrackets(tempBytes) {
+			results = append(results, b)
+		}
+
+	}
+	results = append(results, byte(']'))
+	return results, nil
 }
 
 /*
 	Helpers
 */
-
-func (results *resultsObject) addBindingsType(name []string, d interface{}) bool {
-	switch data := d.(type) {
-	case []roleBinding:
-		// now work on each set of data in turn
-		for i := range name {
-			r := resultEntry{}
-			r.Name = name[i]
-			r.Content = data[i]
-			*results = append(*results, r)
-		}
-		return true
-	default:
-		return false
-	}
-}
-
-func isEmptyObject(d interface{}) bool {
-	// quotas may be empty if no limits were supplied - if so, we want to avoid adding it
-	switch object := d.(type) {
-	case quota:
-		if (quota{}) == object {
-			return true
-		}
-	}
-	return false
-}
-
-func (results *resultsObject) addPayload(f interface{}, d interface{}) {
-	/*
-		f can be a string, or []string - d can be an object, or a slice of them
-	*/
-	if isEmptyObject(d) {
-		return
-	}
-
-	switch name := f.(type) {
-	case string:
-		r := resultEntry{}
-		r.Name = name
-		r.Content = d
-		*results = append(*results, r)
-
-	case []string:
-		// assert that data is of the expected type, and add correct type
-		ok := results.addBindingsType(name, d)
-		if !ok {
-			exitLog("invalid datatype passed, expected []roleBinding")
-		}
-
-	default:
-		exitLog("invalid datatype passed")
-	}
-}
-
-func generateADGroupNames(data *expectedInput) map[string]string {
-	/*
-		AD groups names will be gererated as:
-
-		"RES" + "-" + environment + "-" + "OPSH" + "-" + role + "-" + project_name
-
-		returns a map of "OPENSHIFT ROLE" : "AD GROUP NAME"
-	*/
-	s := make(map[string]string)
-	s["EDIT"] = strings.ToUpper("RES" + "-" + data.Environment + "-" + "OPSH" + "-" + "DEVELOPER" + "-" + strings.ReplaceAll(data.ProjectName, "-", "_"))
-	s["VIEW"] = strings.ToUpper("RES" + "-" + data.Environment + "-" + "OPSH" + "-" + "VIEWER" + "-" + strings.ReplaceAll(data.ProjectName, "-", "_"))
-	return s
-}
-
-func generateADRelmanGroupNames(data *expectedInput) map[string]string {
-	/*
-		AD groups names will be gererated as:
-
-		"RES" + "-" + environment + "-" + "OPSH" + "-" + MANAGE + "-" + RELMAN
-		"RES" + "-" + environment + "-" + "OPSH" + "-" + DEPLOY + "-" + RELMAN
-
-		returns a map of "PURPOSE" : "AD GROUP NAME"
-	*/
-	s := make(map[string]string)
-	s["DEPLOY"] = strings.ToUpper("RES-" + data.Environment + "-OPSH-DEPLOY-RELMAN")
-	s["MANAGE"] = strings.ToUpper("RES-" + data.Environment + "-OPSH-MANAGE-RELMAN")
-	return s
-}
 
 func logFunction(format string) {
 	fmt.Println(format)
@@ -429,6 +163,43 @@ func logFunction(format string) {
 }
 
 var exitLog = logFunction
+
+type config struct {
+	usefileContentInput bool
+	flatOutput          bool
+	templateDir         string
+	fileList            []string
+	fileContent         string // optional, allows testing, and runtime funkiness if required
+}
+
+func stringToSlice(name string) []string {
+	val := strings.Split(name, ",")
+	return val
+}
+
+func getConfig(fileContent string) (*config, error) {
+	tdir := os.Getenv("TEMPLATEDIR")
+	flist := os.Getenv("TEMPLATE_FILELIST")
+
+	if tdir == "" {
+		if flist == "" {
+			if fileContent == "" {
+				return nil, errors.New("environment variables undefined")
+			}
+			return &config{usefileContentInput: true, fileContent: fileContent}, nil
+		}
+		return &config{fileList: stringToSlice(flist)}, nil
+	}
+	// ensure tdir ends with a "/"
+	if tdir[len(tdir)-1] != '/' {
+		tdir = tdir + "/"
+	}
+	if flist == "" {
+		return nil, errors.New("environment variables undefined")
+	}
+	return &config{templateDir: tdir, fileList: stringToSlice(flist)}, nil
+
+}
 
 func main() {
 
@@ -447,16 +218,18 @@ func main() {
 		exitLog("program exited due to error in parsing input: " + err.Error())
 	}
 
-	// lets go
-	rawResults := process(&inputData)
-
-	// serialize data to JSON
-	data, err := json.MarshalIndent(rawResults, "", "  ")
+	config, err := getConfig("")
 	if err != nil {
-		exitLog("serialization error: " + err.Error())
+		exitLog("program exited due to error: " + err.Error())
+	}
+
+	// lets go
+	rawResults, err := config.process(&inputData)
+	if err != nil {
+		exitLog("program exited due to error: " + err.Error())
 	}
 
 	// dump result to STDOUT
-	fmt.Println(string(data))
+	fmt.Println(string(rawResults))
 
 }

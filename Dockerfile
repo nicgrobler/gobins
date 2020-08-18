@@ -9,4 +9,4 @@ RUN cd /go/src/gobins \
 FROM scratch
 COPY --from=builder /go/bin/cluster_reader /go/bin/cluster_reader
 COPY --from=builder /go/bin/parser /go/bin/parser
-
+COPY --from=builder /go/src/gobins/cmd/parser/templates /templates

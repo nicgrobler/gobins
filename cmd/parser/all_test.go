@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"text/template"
 )
 
 func findObjectIndex(name string, files []string) (int, bool) {
@@ -15,17 +16,45 @@ func findObjectIndex(name string, files []string) (int, bool) {
 	return 0, false
 }
 
-func TestGenerateADGroupName(t *testing.T) {
-	i := expectedInput{Environment: "boogie", ProjectName: "extra-good"}
-	got := generateADGroupNames(&i)
-	want := "RES-BOOGIE-OPSH-DEVELOPER-EXTRA_GOOD"
-	if want != got["EDIT"] {
-		t.Errorf("wanted %s, but got %s: \n", want, got)
+func generateTemplate() *template.Template {
+	s := `
+		{{ $data := . }}
+	
+		{{ $modifiedProjectName := replace $data.ProjectName "-" "_" }}
+    	{{ $upperCaseLineEnd := upper $modifiedProjectName }}
+    	{{ $upperCaseEnv := upper $data.Environment }}
+	
+		[{
+       
+			"adgroup":"RES-{{$upperCaseEnv}}-OPSH-DEVELOPER-{{$upperCaseLineEnd}}",
+			"role":"EDIT",
+			"bindingname":"adgroup-edit-binding",
+			"filename":"10-edit-group-rolebinding.json"
+			
+		},
+		{
+			"adgroup":"RES-{{$upperCaseEnv}}-OPSH-VIEWER-{{$upperCaseLineEnd}}",
+			"role":"VIEW",
+			"bindingname":"adgroup-view-binding",
+			"filename":"10-view-group-rolebinding.json"
+			
+		},
+		{
+		   
+			"adgroup":"RES-{{$upperCaseEnv}}-OPSH-DEPLOY-RELMAN",
+			"role":"ADMIN",
+			"bindingname":"adgroup-deploy-binding",
+			"filename":"10-jenkins-rolebinding.json"
+		   
+		}]
+	`
+	funcMap := template.FuncMap{
+		"replace": replace,
+		"upper":   upper,
+		"lower":   lower,
 	}
-	want = "RES-BOOGIE-OPSH-VIEWER-EXTRA_GOOD"
-	if want != got["VIEW"] {
-		t.Errorf("wanted %s, but got %s: \n", want, got)
-	}
+	t := getTemplateFromString("raw_stream", s, funcMap)
+	return t
 }
 
 func TestCheckInputValid(t *testing.T) {
@@ -390,126 +419,250 @@ func TestValidName(t *testing.T) {
 
 func TestCreateNewProjectObject(t *testing.T) {
 
-	expectedBytes := []byte(`{"kind":"Project","apiVersion":"project.openshift.io/v1","metadata":{"name":"boogie-test"}}`)
+	expectedBytes := []byte(`[{"content":{"apiVersion":"project.openshift.io/v1","kind":"Project","metadata":{"name":"boogie-test"}},"filename":"1-project.json"]`)
 
 	i := expectedInput{ProjectName: "boogie-test"}
+	c := config{
+		flatOutput:          true,
+		usefileContentInput: true,
+		fileContent: `{{ $data := . }}
 
-	fileName, baseObject := createProjectObject(&i)
-	gotBytes, err := json.Marshal(baseObject)
+		{{ $lowerProjectName := lower $data.ProjectName }}
+		
+		[{
+			"filename": "1-project.json",
+			"content": {
+			  "kind": "Project",
+			  "apiVersion": "project.openshift.io/v1",
+			  "metadata": {
+				"name": "{{$lowerProjectName}}"
+			  }
+			}
+		}]`,
+	}
+	gotBytes, err := c.process(&i)
+
 	if err != nil {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
 	}
+
 	if string(expectedBytes) != string(gotBytes) {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
 	}
-	expectedObjectName := projectFilename
-	if expectedObjectName != fileName {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedObjectName, fileName)
-	}
-
 }
 
 func TestCreateNewNetworkPolicyObject(t *testing.T) {
 
-	expectedBytes := []byte(`{"kind":"NetworkPolicy","apiVersion":"networking.k8s.io/v1","metadata":{"name":"allow-same-namespace","namespace":"boogie-test"},"spec":{"podSelector":{},"ingress":[{"from":[{"podSelector":{}}]}],"policyTypes":["Ingress"]}}`)
+	expectedBytes := []byte(`[{"content":{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"default-deny-all","namespace":"boogie-test"},"spec":{"podSelector":{},"policyTypes":["Ingress"]}},"filename":"10-networkpolicy.json"]`)
 
 	i := expectedInput{ProjectName: "boogie-test"}
-	fileName, baseObject := createNetworkPolicyObject(&i)
-	gotBytes, err := json.Marshal(baseObject)
+	c := config{
+		flatOutput:          true,
+		usefileContentInput: true,
+		fileContent: `{{ $data := . }}
+
+		{{ $lowerCaseProjectName := lower $data.ProjectName }}
+		
+		[{
+		  
+		"filename":"10-networkpolicy.json",
+		"content":
+		  {
+		  "apiVersion": "networking.k8s.io/v1",
+			"kind": "NetworkPolicy",
+			"metadata": {
+			  "name": "default-deny-all",
+			  "namespace": "{{$lowerCaseProjectName}}"
+			},
+			"spec": {
+			  "podSelector": {},
+			  "policyTypes": [
+				"Ingress"
+			  ]
+			}
+		 }
+		}]`,
+	}
+	gotBytes, err := c.process(&i)
+
 	if err != nil {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
 	}
+
 	if string(expectedBytes) != string(gotBytes) {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
-	}
-	expectedObjectName := networkPolicyFilename
-	if expectedObjectName != fileName {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedObjectName, fileName)
 	}
 
 }
 
 func TestCreateNewEgressNetworkPolicyObject(t *testing.T) {
 
-	expectedBytes := []byte(`{"kind":"EgressNetworkPolicy","apiVersion":"network.openshift.io/v1","metadata":{"name":"default-egress","namespace":"boogie-test"},"spec":{"egress":[{"type":"Deny","to":{"cidrSelector":"0.0.0.0/0"}}]}}`)
+	expectedBytes := []byte(`[{"content":{"apiVersion":"network.openshift.io/v1","kind":"EgressNetworkPolicy","metadata":{"name":"default-egress","namespace":"boogie-test"},"spec":{"egress":[{"to":{"cidrSelector":"0.0.0.0/0"},"type":"Deny"}]}},"filename":"10-egress-networkpolicy.json"]`)
 
 	i := expectedInput{ProjectName: "boogie-test"}
+	c := config{
+		flatOutput:          true,
+		usefileContentInput: true,
+		fileContent: `{{ $data := . }}
 
-	fileName, baseObject := createEgressNetworkPolicyObject(&i)
-	gotBytes, err := json.Marshal(baseObject)
+		{{ $lowerCaseProjectName := lower $data.ProjectName }}
+		
+		[{
+			"filename": "10-egress-networkpolicy.json",
+			"content": {
+			  "kind": "EgressNetworkPolicy",
+			  "apiVersion": "network.openshift.io/v1",
+			  "metadata": {
+				"name": "default-egress",
+				"namespace": "{{$lowerCaseProjectName}}"
+			  },
+			  "spec": {
+				"egress": [
+				  {
+					"type": "Deny",
+					"to": {
+					  "cidrSelector": "0.0.0.0/0"
+					}
+				  }
+				]
+			  }
+			} 
+		}]`,
+	}
+	gotBytes, err := c.process(&i)
+
 	if err != nil {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
 	}
+
 	if string(expectedBytes) != string(gotBytes) {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
-	}
-	expectedObjectName := egressNetworkPolicyFilename
-	if expectedObjectName != fileName {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedObjectName, fileName)
 	}
 
 }
 
 func TestCreateNewRoleBindingObject(t *testing.T) {
 
-	expectedBytes := make(map[string][]byte)
+	expectedBytes := []byte(`[{"content":{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"name":"adgroup-edit-binding","namespace":"boogie-test"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"ClusterRole","name":"edit"},"subjects":[{"apiGroup":"rbac.authorization.k8s.io","kind":"Group","name":"RES--OPSH-DEVELOPER-BOOGIE_TEST"}]},"filename":"10-edit-group-rolebinding.json"},{"content":{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"name":"adgroup-view-binding","namespace":"boogie-test"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"ClusterRole","name":"view"},"subjects":[{"apiGroup":"rbac.authorization.k8s.io","kind":"Group","name":"RES--OPSH-VIEWER-BOOGIE_TEST"}]},"filename":"10-view-group-rolebinding.json"},{"content":{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"name":"adgroup-deploy-binding","namespace":"boogie-test"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"ClusterRole","name":"admin"},"subjects":[{"apiGroup":"rbac.authorization.k8s.io","kind":"Group","name":"RES--OPSH-DEPLOY-RELMAN"}]},"filename":"10-jenkins-rolebinding.json"},{"content":{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"name":"adgroup-manage-binding","namespace":"boogie-test"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"ClusterRole","name":"deploy"},"subjects":[{"apiGroup":"rbac.authorization.k8s.io","kind":"Group","name":"RES--OPSH-MANAGE-RELMAN"}]},"filename":"10-default-rolebinding.json"]`)
 
-	expectedBytes[editRolebindingFilename] = []byte(`{"kind":"RoleBinding","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"adgroup-edit-binding","namespace":"boogie-test"},"subjects":[{"kind":"Group","apiGroup":"rbac.authorization.k8s.io","name":"RES-DEV-OPSH-DEVELOPER-BOOGIE_TEST"}],"roleRef":{"kind":"ClusterRole","apiGroup":"rbac.authorization.k8s.io","name":"edit"}}`)
-	expectedBytes[viewRolebindingFilename] = []byte(`{"kind":"RoleBinding","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"adgroup-view-binding","namespace":"boogie-test"},"subjects":[{"kind":"Group","apiGroup":"rbac.authorization.k8s.io","name":"RES-DEV-OPSH-VIEWER-BOOGIE_TEST"}],"roleRef":{"kind":"ClusterRole","apiGroup":"rbac.authorization.k8s.io","name":"view"}}`)
-	expectedBytes[jenkinsRolebindinngFilename] = []byte(`{"kind":"RoleBinding","apiVersion":"rbac.authorization.k8s.io/v1","metadata":{"name":"relman-deploy-binding","namespace":"boogie-test"},"subjects":[{"kind":"Group","apiGroup":"rbac.authorization.k8s.io","name":"RES-DEV-OPSH-DEPLOY-RELMAN"}],"roleRef":{"kind":"ClusterRole","apiGroup":"rbac.authorization.k8s.io","name":"admin"}}`)
+	i := expectedInput{ProjectName: "boogie-test"}
+	c := config{
+		flatOutput:          true,
+		usefileContentInput: true,
+		fileContent: `    {{ $data := . }}
 
-	i := expectedInput{ProjectName: "boogie-test", Environment: "dev"}
-
-	fileNames, baseObject := createRoleBindingObjects(&i)
-	expectedObjectName := editRolebindingFilename
-
-	index, found := findObjectIndex(expectedObjectName, fileNames)
-	// verify file is in list
-	if !found {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "true", "false")
+		{{ $modifiedProjectName := replace $data.ProjectName "-" "_" }}
+		{{ $upperCaseLineEnd := upper $modifiedProjectName }}
+		{{ $upperCaseEnv := upper $data.Environment }}
+		{{ $lowerProjectName := lower $data.ProjectName }}
+	
+	[{
+		"filename": "10-edit-group-rolebinding.json",
+		"content": {
+		  "kind": "RoleBinding",
+		  "apiVersion": "rbac.authorization.k8s.io/v1",
+		  "metadata": {
+			"name": "adgroup-edit-binding",
+			"namespace": "{{$lowerProjectName}}"
+		  },
+		  "subjects": [
+			{
+			  "kind": "Group",
+			  "apiGroup": "rbac.authorization.k8s.io",
+			  "name": "RES-{{$upperCaseEnv}}-OPSH-DEVELOPER-{{$upperCaseLineEnd}}"
+			}
+		  ],
+		  "roleRef": {
+			"kind": "ClusterRole",
+			"apiGroup": "rbac.authorization.k8s.io",
+			"name": "edit"
+		  }
+		}
+	  },
+	  {
+		"filename": "10-view-group-rolebinding.json",
+		"content": {
+		  "kind": "RoleBinding",
+		  "apiVersion": "rbac.authorization.k8s.io/v1",
+		  "metadata": {
+			"name": "adgroup-view-binding",
+			"namespace": "{{$lowerProjectName}}"
+		  },
+		  "subjects": [
+			{
+			  "kind": "Group",
+			  "apiGroup": "rbac.authorization.k8s.io",
+			  "name": "RES-{{$upperCaseEnv}}-OPSH-VIEWER-{{$upperCaseLineEnd}}"
+			}
+		  ],
+		  "roleRef": {
+			"kind": "ClusterRole",
+			"apiGroup": "rbac.authorization.k8s.io",
+			"name": "view"
+		  }
+		}
+	  },
+	  {
+		"filename": "10-jenkins-rolebinding.json",
+		"content": {
+		  "kind": "RoleBinding",
+		  "apiVersion": "rbac.authorization.k8s.io/v1",
+		  "metadata": {
+			"name": "adgroup-deploy-binding",
+			"namespace": "{{$lowerProjectName}}"
+		  },
+		  "subjects": [
+			{
+			  "kind": "Group",
+			  "apiGroup": "rbac.authorization.k8s.io",
+			  "name": "RES-{{$upperCaseEnv}}-OPSH-DEPLOY-RELMAN"
+			}
+		  ],
+		  "roleRef": {
+			"kind": "ClusterRole",
+			"apiGroup": "rbac.authorization.k8s.io",
+			"name": "admin"
+		  }
+		}
+	  },
+	  {
+		"filename": "10-default-rolebinding.json",
+		"content": {
+		  "kind": "RoleBinding",
+		  "apiVersion": "rbac.authorization.k8s.io/v1",
+		  "metadata": {
+			"name": "adgroup-manage-binding",
+			"namespace": "{{$lowerProjectName}}"
+		  },
+		  "subjects": [
+			{
+			  "kind": "Group",
+			  "apiGroup": "rbac.authorization.k8s.io",
+			  "name": "RES-{{$upperCaseEnv}}-OPSH-MANAGE-RELMAN"
+			}
+		  ],
+		  "roleRef": {
+			"kind": "ClusterRole",
+			"apiGroup": "rbac.authorization.k8s.io",
+			"name": "deploy"
+		  }
+		}
+	}]`,
 	}
-	// verify contents are correct
-	gotBytes, err := json.Marshal(baseObject[index])
+	gotBytes, err := c.process(&i)
+
 	if err != nil {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
 	}
-	if string(expectedBytes[expectedObjectName]) != string(gotBytes) {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes[expectedObjectName], gotBytes)
-	}
 
-	expectedObjectName = viewRolebindingFilename
-	index, found = findObjectIndex(expectedObjectName, fileNames)
-	// verify file is in list
-	if !found {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "true", "false")
-	}
-
-	gotBytes, err = json.Marshal(baseObject[index])
-	if err != nil {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
-	}
-	if string(expectedBytes[expectedObjectName]) != string(gotBytes) {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes[expectedObjectName], gotBytes)
-	}
-
-	expectedObjectName = jenkinsRolebindinngFilename
-	index, found = findObjectIndex(expectedObjectName, fileNames)
-	// verify file is in list
-	if !found {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "true", "false")
-	}
-	gotBytes, err = json.Marshal(baseObject[index])
-	if err != nil {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
-	}
-	if string(expectedBytes[expectedObjectName]) != string(gotBytes) {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes[expectedObjectName], gotBytes)
+	if string(expectedBytes) != string(gotBytes) {
+		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
 	}
 
 }
 
 func TestCreateNewLimitsObject(t *testing.T) {
-	expectedBytes := []byte(`{"kind":"ResourceQuota","apiVersion":"v1","metadata":{"name":"default-quotas","namespace":"boogie-test"},"spec":{"hard":{"limits.cpu":2,"limits.memory":"1Gi","persistentvolumeclaims":3,"requests.storage":"100Gi"}}}`)
+	expectedBytes := []byte(`[{"content":{"apiVersion":"v1","kind":"ResourceQuota","metadata":{"name":"default-quotas","namespace":"boogie-test"},"spec":{"hard":{"limits.cpu":2,"limits.memory":"1Gi","persistentvolumeclaims":3,"requests.storage":"100Gi"}}},"filename":"10-quotas.json"]`)
 
 	o := []optionalObject{
 		optionalObject{
@@ -532,23 +685,53 @@ func TestCreateNewLimitsObject(t *testing.T) {
 		},
 	}
 
-	i := expectedInput{ProjectName: "boogie-test", Environment: "dev", Optionals: o}
+	i := expectedInput{ProjectName: "boogie-test", Optionals: o}
+	c := config{
+		flatOutput:          true,
+		usefileContentInput: true,
+		fileContent: `{{ $data := . }}
 
-	fileName, baseObject := createLimitsObject(&i)
-	// verify contents are correct
-	gotBytes, err := json.Marshal(baseObject)
+		{{ $lowerProjectName := lower $data.ProjectName }}
+		
+		{{ $cpu := getCPU $data "100m" }}
+		{{ $mem := getMEM $data "100Mi" }}
+		{{ $pvc := getPVC $data 1 }}
+		{{ $storage := getStorage $data "1Gi" }}
+		
+		
+		[
+		  {
+			"filename": "10-quotas.json",
+		   "content": {
+			  "kind": "ResourceQuota",
+			  "apiVersion": "v1",
+			  "metadata": {
+				"name": "default-quotas",
+				"namespace": "{{$lowerProjectName}}"
+			  },
+			  "spec": {
+				"hard": {
+				  "limits.cpu": {{$cpu}},
+				  "limits.memory": {{$mem}},
+				  "persistentvolumeclaims": {{$pvc}},
+				  "requests.storage": {{$storage}}
+				}
+			  }
+			}
+		
+		  }]`,
+	}
+	gotBytes, err := c.process(&i)
+
 	if err != nil {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
 	}
+
 	if string(expectedBytes) != string(gotBytes) {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
 	}
-	expectedObjectName := quotaFilename
-	if expectedObjectName != fileName {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedObjectName, fileName)
-	}
 
-	expectedBytes = []byte(`{"kind":"ResourceQuota","apiVersion":"v1","metadata":{"name":"default-quotas","namespace":"boogie-test"},"spec":{"hard":{"limits.cpu":1,"limits.memory":"5Gi","requests.storage":"5Gi"}}}`)
+	expectedBytes = []byte(`[{"content":{"apiVersion":"v1","kind":"ResourceQuota","metadata":{"name":"default-quotas","namespace":"boogie-test"},"spec":{"hard":{"limits.cpu":1,"limits.memory":"5Gi","persistentvolumeclaims":1,"requests.storage":"5Gi"}}},"filename":"10-quotas.json"]`)
 
 	o = []optionalObject{
 		optionalObject{
@@ -568,58 +751,34 @@ func TestCreateNewLimitsObject(t *testing.T) {
 
 	i = expectedInput{ProjectName: "boogie-test", Environment: "dev", Optionals: o}
 
-	fileName, baseObject = createLimitsObject(&i)
-	// verify contents are correct
-	gotBytes, err = json.Marshal(baseObject)
+	gotBytes, err = c.process(&i)
+
 	if err != nil {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
 	}
+
 	if string(expectedBytes) != string(gotBytes) {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
 	}
+	/*
+		expectedBytes = []byte(`{"kind":"","apiVersion":"","metadata":{"name":""},"spec":{"hard":{}}}`)
 
-	expectedObjectName = quotaFilename
-	if expectedObjectName != fileName {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedObjectName, fileName)
-	}
+		i = expectedInput{ProjectName: "boogie-test", Environment: "dev"}
 
-	expectedBytes = []byte(`{"kind":"","apiVersion":"","metadata":{"name":""},"spec":{"hard":{}}}`)
+		gotBytes, err = c.process(&i)
 
-	i = expectedInput{ProjectName: "boogie-test", Environment: "dev"}
+		if err != nil {
+			t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
+		}
 
-	fileName, baseObject = createLimitsObject(&i)
-	// verify contents are correct
-	gotBytes, err = json.Marshal(baseObject)
-	if err != nil {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
-	}
-	if string(expectedBytes) != string(gotBytes) {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
-	}
-	expectedObjectName = ""
-	if expectedObjectName != fileName {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedObjectName, fileName)
-	}
-}
-
-func TestIsEmptyObject(t *testing.T) {
-	q := quota{}
-	isEmpty := isEmptyObject(q)
-	if !isEmpty {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "empty", "not empty")
-	}
-
-	q = quota{}
-	q.Kind = "whatever"
-
-	isEmpty = isEmptyObject(q)
-	if isEmpty {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", "not empty", "empty")
-	}
+		if string(expectedBytes) != string(gotBytes) {
+			t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
+		}
+	*/
 }
 
 func TestCreateNewLimitsObjectCPU(t *testing.T) {
-	expectedBytes := []byte(`{"kind":"ResourceQuota","apiVersion":"v1","metadata":{"name":"default-quotas","namespace":"boogie-test"},"spec":{"hard":{"limits.cpu":"200m","limits.memory":"1Gi","persistentvolumeclaims":3}}}`)
+	expectedBytes := []byte(`[{"content":{"apiVersion":"v1","kind":"ResourceQuota","metadata":{"name":"default-quotas","namespace":"boogie-test"},"spec":{"hard":{"limits.cpu":"200m","limits.memory":"1Gi","persistentvolumeclaims":3,"requests.storage":"1Gi"}}},"filename":"10-quotas.json"]`)
 
 	o := []optionalObject{
 		optionalObject{
@@ -639,18 +798,50 @@ func TestCreateNewLimitsObjectCPU(t *testing.T) {
 
 	i := expectedInput{ProjectName: "boogie-test", Environment: "dev", Optionals: o}
 
-	fileName, baseObject := createLimitsObject(&i)
-	// verify contents are correct
-	gotBytes, err := json.Marshal(baseObject)
+	c := config{
+		flatOutput:          true,
+		usefileContentInput: true,
+		fileContent: `{{ $data := . }}
+
+		{{ $lowerProjectName := lower $data.ProjectName }}
+		
+		{{ $cpu := getCPU $data "100m" }}
+		{{ $mem := getMEM $data "100Mi" }}
+		{{ $pvc := getPVC $data 1 }}
+		{{ $storage := getStorage $data "1Gi" }}
+		
+		
+		[
+		  {
+			"filename": "10-quotas.json",
+		   "content": {
+			  "kind": "ResourceQuota",
+			  "apiVersion": "v1",
+			  "metadata": {
+				"name": "default-quotas",
+				"namespace": "{{$lowerProjectName}}"
+			  },
+			  "spec": {
+				"hard": {
+				  "limits.cpu": {{$cpu}},
+				  "limits.memory": {{$mem}},
+				  "persistentvolumeclaims": {{$pvc}},
+				  "requests.storage": {{$storage}}
+				}
+			  }
+			}
+		
+		  }
+		]`,
+	}
+	gotBytes, err := c.process(&i)
+
 	if err != nil {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
 	}
+
 	if string(expectedBytes) != string(gotBytes) {
 		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
-	}
-	expectedObjectName := quotaFilename
-	if expectedObjectName != fileName {
-		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedObjectName, fileName)
 	}
 
 }

@@ -1,0 +1,34 @@
+
+
+{{ $data := . }}
+
+{{ $lowerProjectName := lower $data.ProjectName }}
+
+{{ $cpu := getCPU $data "100m" }}
+{{ $mem := getMEM $data "100Mi" }}
+{{ $pvc := getPVC $data 1 }}
+{{ $storage := getStorage $data "1Gi" }}
+
+
+[
+  {
+    "filename": "10-quotas.json",
+   "content": {
+      "kind": "ResourceQuota",
+      "apiVersion": "v1",
+      "metadata": {
+        "name": "default-quotas",
+        "namespace": "{{$lowerProjectName}}"
+      },
+      "spec": {
+        "hard": {
+          "limits.cpu": {{$cpu}},
+          "limits.memory": {{$mem}},
+          "persistentvolumeclaims": {{$pvc}},
+          "requests.storage": {{$storage}}
+        }
+      }
+    }
+
+  }
+]

@@ -30,13 +30,16 @@ import (
 							"name":"volumes",
 							"count":2
 						},
-						}
+						{
 							"name":"storage",
 							"count":10,
 							"unit":"Gi"
 						}
 			]
 		}
+
+		{"projectname":"nic-test-backbase-reference","environment":"dev","optionals":[{"name":"cpu","count":1},{"name":"memory","count":1,"unit":"Gi"},{"name":"volumes","count":2},{"name":"storage","count":10,"unit":"Gi"}]}
+
 
 
 */

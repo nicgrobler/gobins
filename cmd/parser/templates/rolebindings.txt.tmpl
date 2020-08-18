@@ -1,0 +1,101 @@
+
+
+    {{ $data := . }}
+
+    {{ $modifiedProjectName := replace $data.ProjectName "-" "_" }}
+    {{ $upperCaseLineEnd := upper $modifiedProjectName }}
+    {{ $upperCaseEnv := upper $data.Environment }}
+    {{ $lowerProjectName := lower $data.ProjectName }}
+
+[{
+    "filename": "10-edit-group-rolebinding.json",
+    "content": {
+      "kind": "RoleBinding",
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "metadata": {
+        "name": "adgroup-edit-binding",
+        "namespace": "{{$lowerProjectName}}"
+      },
+      "subjects": [
+        {
+          "kind": "Group",
+          "apiGroup": "rbac.authorization.k8s.io",
+          "name": "RES-{{$upperCaseEnv}}-OPSH-DEVELOPER-{{$upperCaseLineEnd}}"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "edit"
+      }
+    }
+  },
+  {
+    "filename": "10-view-group-rolebinding.json",
+    "content": {
+      "kind": "RoleBinding",
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "metadata": {
+        "name": "adgroup-view-binding",
+        "namespace": "{{$lowerProjectName}}"
+      },
+      "subjects": [
+        {
+          "kind": "Group",
+          "apiGroup": "rbac.authorization.k8s.io",
+          "name": "RES-{{$upperCaseEnv}}-OPSH-VIEWER-{{$upperCaseLineEnd}}"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "view"
+      }
+    }
+  },
+  {
+    "filename": "10-jenkins-rolebinding.json",
+    "content": {
+      "kind": "RoleBinding",
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "metadata": {
+        "name": "adgroup-deploy-binding",
+        "namespace": "{{$lowerProjectName}}"
+      },
+      "subjects": [
+        {
+          "kind": "Group",
+          "apiGroup": "rbac.authorization.k8s.io",
+          "name": "RES-{{$upperCaseEnv}}-OPSH-DEPLOY-RELMAN"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "admin"
+      }
+    }
+  },
+  {
+    "filename": "10-default-rolebinding.json",
+    "content": {
+      "kind": "RoleBinding",
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "metadata": {
+        "name": "adgroup-manage-binding",
+        "namespace": "{{$lowerProjectName}}"
+      },
+      "subjects": [
+        {
+          "kind": "Group",
+          "apiGroup": "rbac.authorization.k8s.io",
+          "name": "RES-{{$upperCaseEnv}}-OPSH-MANAGE-RELMAN"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "deploy"
+      }
+    }
+}]
