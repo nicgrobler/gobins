@@ -153,6 +153,28 @@ func (c *config) process(data *expectedInput) ([]byte, error) {
 	return results, nil
 }
 
+func (c *config) show() ([]byte, error) {
+	data := &expectedInput{ProjectName: "show-only"}
+	var results []byte
+	// as returning a JSON slice, add first and last brackets
+	results = append(results, byte('['))
+
+	// grab templates
+	templates := c.getTemplates(data)
+	for _, t := range templates {
+		tempBytes, err := c.createJSONBytes(data, t)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range rangeBetweenBrackets(tempBytes) {
+			results = append(results, b)
+		}
+
+	}
+	results = append(results, byte(']'))
+	return results, nil
+}
+
 /*
 	Helpers
 */
@@ -203,9 +225,35 @@ func getConfig(fileContent string) (*config, error) {
 
 func main() {
 
+	config, err := getConfig("")
+	if err != nil {
+		exitLog("program exited due to error: " + err.Error())
+	}
+
 	var incomingJSON *string
+	var boolPtr *bool
 	incomingJSON = flag.String("generate", "", "the json payload used to generate the OpenShift json")
+	boolPtr = flag.Bool("show-quota", false, "if used, displays the default quotas that will be applied")
 	flag.Parse()
+
+	if *boolPtr {
+		// modify the config's filelist to ONLY include the one for quotas
+		newFileList := make([]string, 1)
+		for _, fileName := range config.fileList {
+			if strings.Contains(fileName, "quotas") {
+				newFileList[0] = fileName
+			}
+		}
+		config.fileList = newFileList
+		rawResults, err := config.show()
+		if err != nil {
+			exitLog("program exited due to error: " + err.Error())
+		}
+
+		// dump result to STDOUT
+		fmt.Println(string(rawResults))
+		os.Exit(0)
+	}
 
 	if *incomingJSON == "" {
 		exitLog("program exited due to missing input")
@@ -213,14 +261,9 @@ func main() {
 
 	var inputData expectedInput
 	// unmarshal will call our custom decoders which do input verification
-	err := json.Unmarshal([]byte(*incomingJSON), &inputData)
+	err = json.Unmarshal([]byte(*incomingJSON), &inputData)
 	if err != nil {
 		exitLog("program exited due to error in parsing input: " + err.Error())
-	}
-
-	config, err := getConfig("")
-	if err != nil {
-		exitLog("program exited due to error: " + err.Error())
 	}
 
 	// lets go

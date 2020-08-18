@@ -845,3 +845,54 @@ func TestCreateNewLimitsObjectCPU(t *testing.T) {
 	}
 
 }
+
+func TestShowDefaultQuotas(t *testing.T) {
+	expectedBytes := []byte(`[{"content":{"apiVersion":"v1","kind":"ResourceQuota","metadata":{"name":"default-quotas","namespace":"show-only"},"spec":{"hard":{"limits.cpu":"100m","limits.memory":"100Mi","persistentvolumeclaims":1,"requests.storage":"1Gi"}}},"filename":"10-quotas.json"]`)
+
+	c := config{
+		flatOutput:          true,
+		usefileContentInput: true,
+		fileContent: `{{ $data := . }}
+
+		{{ $lowerProjectName := lower $data.ProjectName }}
+		
+		{{ $cpu := getCPU $data "100m" }}
+		{{ $mem := getMEM $data "100Mi" }}
+		{{ $pvc := getPVC $data 1 }}
+		{{ $storage := getStorage $data "1Gi" }}
+		
+		
+		[
+		  {
+			"filename": "10-quotas.json",
+		   "content": {
+			  "kind": "ResourceQuota",
+			  "apiVersion": "v1",
+			  "metadata": {
+				"name": "default-quotas",
+				"namespace": "{{$lowerProjectName}}"
+			  },
+			  "spec": {
+				"hard": {
+				  "limits.cpu": {{$cpu}},
+				  "limits.memory": {{$mem}},
+				  "persistentvolumeclaims": {{$pvc}},
+				  "requests.storage": {{$storage}}
+				}
+			  }
+			}
+		
+		  }
+		]`,
+	}
+	gotBytes, err := c.show()
+
+	if err != nil {
+		t.Errorf("wanted \n%s, \nbut got \n%s \n", "no error", err.Error())
+	}
+
+	if string(expectedBytes) != string(gotBytes) {
+		t.Errorf("wanted \n%s, \nbut got \n%s \n", expectedBytes, gotBytes)
+	}
+
+}
