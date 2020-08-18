@@ -139,13 +139,17 @@ func (c *config) process(data *expectedInput) ([]byte, error) {
 
 	// grab templates
 	templates := c.getTemplates(data)
-	for _, t := range templates {
+	for i, t := range templates {
 		tempBytes, err := c.createJSONBytes(data, t)
 		if err != nil {
 			return nil, err
 		}
 		for _, b := range rangeBetweenBrackets(tempBytes) {
 			results = append(results, b)
+		}
+		// add a comma to the output unless we're the last
+		if i < len(templates)-1 {
+			results = append(results, byte(','))
 		}
 
 	}
