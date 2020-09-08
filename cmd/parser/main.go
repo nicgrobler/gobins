@@ -203,9 +203,13 @@ func stringToSlice(name string) []string {
 	return val
 }
 
+func removeSpaces(dirty string) string {
+	return strings.TrimSpace(dirty)
+}
+
 func getConfig(fileContent string) (*config, error) {
-	tdir := os.Getenv("TEMPLATEDIR")
-	flist := os.Getenv("TEMPLATE_FILELIST")
+	tdir := removeSpaces(os.Getenv("TEMPLATEDIR"))
+	flist := removeSpaces(os.Getenv("TEMPLATE_FILELIST"))
 
 	if tdir == "" {
 		if flist == "" {

@@ -379,6 +379,21 @@ func TestValidUnit(t *testing.T) {
 	}
 }
 
+func TestRemoveSpaces(t *testing.T) {
+
+	want := "/templates"
+	got := removeSpaces("\n/templates\n")
+	if got != want {
+		t.Errorf("wanted %v, but got %v: \n", want, got)
+	}
+
+	want = "/templates/test.text"
+	got = removeSpaces(" /templates/test.text\r\n")
+	if got != want {
+		t.Errorf("wanted %v, but got %v: \n", want, got)
+	}
+}
+
 func TestValidName(t *testing.T) {
 	want := false
 	got := validName("cpus")
