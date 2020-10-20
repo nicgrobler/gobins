@@ -92,28 +92,44 @@ func buildConfigFromFlags(context, kubeconfigPath string) (*rest.Config, error) 
 		}).ClientConfig()
 }
 
+func getConfig(kubeconfig, clusterContext, nameSpace string, localOnly bool) *rest.Config {
+	var config *rest.Config
+	if localOnly {
+		// creates the in-cluster config
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			panic(err.Error())
+		}
+		return config
+	}
+	if kubeconfig == "" || clusterContext == "" || nameSpace == "" {
+		log.Fatalf("kubeconfig: %s, context: %s, and namespace: %s\n", kubeconfig, clusterContext, nameSpace)
+	}
+
+	// use the current context in kubeconfig
+	config, err := buildConfigFromFlags(clusterContext, kubeconfig)
+	if err != nil {
+		log.Fatalf("buidling config failed: %s", err.Error())
+	}
+	return config
+}
+
 func main() {
 	var kubeconfig *string
 	var clusterContext *string
 	var nameSpace *string
+	var localOnly *bool
 
+	localOnly = flag.Bool("local", false, "can bypass kubeconfig requirement if running within pod that has service account.")
 	kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	clusterContext = flag.String("context", "", "specify the context to use for the connection")
 	nameSpace = flag.String("namespace", "", "the namespace to query against")
 
 	flag.Parse()
 
+	// get config corresponding to chosen flags
+	config := getConfig(*kubeconfig, *clusterContext, *nameSpace, *localOnly)
 	results := resultList{}
-
-	if *kubeconfig == "" || *clusterContext == "" || *nameSpace == "" {
-		log.Fatalf("kubeconfig: %s, context: %s, and namespace: %s\n", *kubeconfig, *clusterContext, *nameSpace)
-	}
-
-	// use the current context in kubeconfig
-	config, err := buildConfigFromFlags(*clusterContext, *kubeconfig)
-	if err != nil {
-		log.Fatalf("buidling config failed: %s", err.Error())
-	}
 
 	// create the clientsets
 	clientset, err := core.NewForConfig(config)
